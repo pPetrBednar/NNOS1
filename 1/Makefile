@@ -2,7 +2,7 @@
 CC = gcc
 
 # compiler switches / přepínače pro kompilátor
-CFLAGS = -Wall -D_REENTRANT
+CFLAGS = -Wall
 # -Wall		warnings: all / vypisovat všechna varování
 # -g		include debugging symbols / zahrnout symboly pro debugger
 # -Dsymbol	define symbol like #define / definuje symbol jako #define
@@ -11,7 +11,7 @@ CFLAGS = -Wall -D_REENTRANT
 # linker switches / přepínače pro linker
 LDFLAGS =
 # link libraries / knihovny pro linker
-LDLIBS = -lpthread
+LDLIBS =
 # -llibrary / -lknihovna
 #  libNAME.so.version	filename of the library / jméno souboru knihovny
 # -lNAME

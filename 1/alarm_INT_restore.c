@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <signal.h>
 #include <stdbool.h>
+#include <string.h>     // added to fix warning: implicit declaration of function ‘memset’
 
 bool interrupted = false;			// was interrupted?
 
@@ -28,6 +29,7 @@ int main(int argc, char *argv[]) {
 	sigset_t sigs;
 	struct sigaction sa_old;
 	struct sigaction sa_new;
+	struct sigaction sa_sigalrm_old;    // old SIGALRM handler setting
 
 	memset(&sa_new, 0, sizeof(sa_new));	// initialization to zeros
 	sa_new.sa_handler = catch_sig;		// set handler
@@ -37,7 +39,7 @@ int main(int argc, char *argv[]) {
 	sa_new.sa_flags = 0;			// no flags
 
 	sigaction(SIGINT, &sa_new, &sa_old);	// set the handler for SIGINT and get old handler setting
-	sigaction(SIGALRM, &sa_new, NULL);	// set the same handler for SIGALRM
+	sigaction(SIGALRM, &sa_new, &sa_sigalrm_old);	// set the same handler for SIGALRM and get old handler setting
 
 	sigfillset(&sigs);			// all signals to the set
 	sigdelset(&sigs, SIGINT);		// remove SIGINT from the set
@@ -47,6 +49,9 @@ int main(int argc, char *argv[]) {
 
 	alarm(5);		// timeout after 5 seconds
 	sigsuspend(&sigs);	// wait for SIGINT or SIGALRM
+
+	sigaction(SIGINT, &sa_old, NULL);	// restore old handler for SIGINT
+	sigaction(SIGALRM, &sa_sigalrm_old, NULL);	// restore old handler for SIGALRM
 
 	if (interrupted) {
 		puts("User requested to break.");
