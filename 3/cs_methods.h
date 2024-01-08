@@ -23,12 +23,14 @@
 #include <stdlib.h>						// exit
 #include <stdio.h>						// fprintf
 // additional includes for critical section access control methods
-
+#include <stdatomic.h>					// atomic_flag
+#include <sched.h>						// sched_yield(2)
 
 bool busy_wait_yields = false;			// set by the main program
 
 // macros, variable declarations and function definitions for critical section access control
-
+volatile bool locked;					// CS_METHOD_LOCKED, CS_METHOD_TEST_XCHG
+volatile atomic_flag xchg_locked;		// CS_METHOD_XCHG
 
 // note: inline is not used unless asked for optimization
 #define FORCE_INLINE	__attribute__ ((always_inline)) static inline
@@ -63,12 +65,14 @@ void cs_init(int method)
 	cs_method_used = method;
 	switch (cs_method_used) {
 	case CS_METHOD_ATOMIC:
-		break;
+		return;
 	case CS_METHOD_LOCKED:
 	case CS_METHOD_TEST_XCHG:
-		break;
+		locked = false;
+		return;
 	case CS_METHOD_XCHG:
-		break;
+		atomic_flag_clear(&xchg_locked);
+		return;
 	case CS_METHOD_MUTEX:
 		break;
 	case CS_METHOD_SEM_POSIX:
@@ -121,10 +125,26 @@ void cs_enter(int id)
 	case CS_METHOD_ATOMIC:
 		break;
 	case CS_METHOD_LOCKED:
+		while (locked) {
+			if (busy_wait_yields) {
+				sched_yield();
+			}
+		}
+		locked = true;
 		break;
 	case CS_METHOD_TEST_XCHG:
+		while (atomic_load_explicit(&locked, memory_order_relaxed) || atomic_exchange_explicit(&locked, true, memory_order_acquire)) {
+			if (busy_wait_yields) {
+				sched_yield();
+			}
+		}
 		break;
 	case CS_METHOD_XCHG:
+		while (atomic_flag_test_and_set(&xchg_locked)) {
+			if (busy_wait_yields) {
+				sched_yield();
+			}
+		}
 		break;
 	case CS_METHOD_MUTEX:
 		break;
@@ -148,10 +168,13 @@ void cs_leave(int id)
 	case CS_METHOD_ATOMIC:
 		break;
 	case CS_METHOD_LOCKED:
+		locked = false;
 		break;
 	case CS_METHOD_TEST_XCHG:
+		atomic_store_explicit(&locked, false, memory_order_release);
 		break;
 	case CS_METHOD_XCHG:
+		atomic_flag_clear(&xchg_locked);
 		break;
 	case CS_METHOD_MUTEX:
 		break;
