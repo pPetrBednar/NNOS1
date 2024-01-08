@@ -18,6 +18,7 @@
 #include <time.h>				// real time measuring
 #include <sys/time.h>			// CPU time measuring
 #include <sys/resource.h>		// CPU time measuring
+#include <stdatomic.h>			// atomic_long
 #include "cs_methods.h"			// methods for critical section access control
 
 #define MAX_THREADS		1024
@@ -31,7 +32,7 @@ bool do_sync_start = true;		// always synchronous start
 long per_thread = PER_THREAD;	// transactions per thread
 int thread_count = THREADS;		// the number of threads
 volatile long balance;			// shared variable, initial balance
-volatile long balance_atomic;	// used for atomic solution
+volatile atomic_long balance_atomic;	// used for atomic solution
 
 long withdrawn[MAX_THREADS];	// the amount withdrawn by each thread
 
