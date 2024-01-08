@@ -23,12 +23,16 @@
 #include <stdlib.h>						// exit
 #include <stdio.h>						// fprintf
 // additional includes for critical section access control methods
-
+#include <sys/ipc.h>					// IPC_PRIVATE
+#include <sys/sem.h>					// System V semaphores
+#include <errno.h>						// perror
 
 bool busy_wait_yields = false;			// set by the main program
 
 // macros, variable declarations and function definitions for critical section access control
-
+int sem_id;								// CS_METHOD_SEM_SYSV
+struct sembuf sops_wait;				// CS_METHOD_SEM_SYSV
+struct sembuf sops_post;				// CS_METHOD_SEM_SYSV
 
 // note: inline is not used unless asked for optimization
 #define FORCE_INLINE	__attribute__ ((always_inline)) static inline
@@ -76,6 +80,23 @@ void cs_init(int method)
 	case CS_METHOD_SEM_POSIX_NAMED:
 		break;
 	case CS_METHOD_SEM_SYSV:
+		if ((sem_id = semget(IPC_PRIVATE, 1, 0600)) == -1) {
+													// key - IPC_PRIVATE: to create private semaphore set for process
+													// nsems - 1: number of created semaphores in set
+													// semflg - 0600: rw for process owner
+			perror("semget");
+			exit(EXIT_FAILURE);
+		}
+		if (semctl(sem_id, 0, SETVAL, 1) == -1) { 	// init first semaphore to 1 using command SETVAL
+			perror("semctl init");
+			exit(EXIT_FAILURE);
+		}
+		sops_wait.sem_num = 0;						// semaphore number - 0: because we have only one semaphore
+		sops_wait.sem_flg = SEM_UNDO;				// operation flag - SEM_UNDO: revert on process failure
+		sops_wait.sem_op = -1;						// semaphore operation - (-1): wait
+		sops_post.sem_num = 0;
+		sops_post.sem_flg = SEM_UNDO;
+		sops_post.sem_op = 1;						// semaphore operation - (1): post
 		break;
 	case CS_METHOD_MQ_POSIX:
 		break;
@@ -106,6 +127,12 @@ void cs_destroy(void)
 	case CS_METHOD_SEM_POSIX_NAMED:
 		break;
 	case CS_METHOD_SEM_SYSV:
+		if (semctl(sem_id, 0, IPC_RMID) == -1) {
+										// immediately remove semaphore set awakening all blocked processes
+										// cmd - IPC_RMID: provides functionality above
+			perror("semctl destroy");
+			exit(EXIT_FAILURE);
+		}
 		break;
 	case CS_METHOD_MQ_POSIX:
 		break;
@@ -133,6 +160,12 @@ void cs_enter(int id)
 	case CS_METHOD_SEM_POSIX_NAMED:
 		break;
 	case CS_METHOD_SEM_SYSV:
+		if (semop(sem_id, &sops_wait, 1) == -1) {
+										// wait on System V semaphore
+										// 1 to represent number of affected semaphores
+			perror("semop wait");
+			exit(EXIT_FAILURE);
+		}
 		break;
 	case CS_METHOD_MQ_POSIX:
 		break;
@@ -160,6 +193,12 @@ void cs_leave(int id)
 	case CS_METHOD_SEM_POSIX_NAMED:
 		break;
 	case CS_METHOD_SEM_SYSV:
+		if (semop(sem_id, &sops_post, 1) == -1) {
+										// post on System V semaphore
+										// 1 to represent number of affected semaphores
+			perror("semop post");
+			exit(EXIT_FAILURE);
+		}
 		break;
 	case CS_METHOD_MQ_POSIX:
 		break;
