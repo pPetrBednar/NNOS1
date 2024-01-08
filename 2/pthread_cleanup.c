@@ -33,7 +33,7 @@ char *name = NULL;		// buffer for name storage
 // free a buffer (passed as the address of the pointer to buffer), store NULL to it and print optional message
 void release_buffer(char **buf, char *msg)
 {
-	if (buf) {
+	if (buf && *buf != NULL) {	// release and print message only if buffer was allocated
 		free(*buf);
 		*buf = NULL;
 		if (msg)
@@ -69,12 +69,17 @@ void *thread_func(void *unused)
 		return NULL;
 	}
 	printf("Temporary buffer allocated.\n");
+	pthread_cleanup_push(release_buffer_tmp, &buf);	// push buffer release routine on top of the stack
 
 	printf("Enter your name (timeout %d s): ", TIMEOUT);	// ask for input
-	gets(buf);			// read input
+	if (fgets(buf, BUF_SIZE, stdin) == NULL) {	// read input and check for fgets errors
+		perror("fgets");
+		release_buffer_tmp(&buf);	// release temporary buffer
+		return NULL;
+	}
 	name = strdup(buf); 		// allocate memory for entered name
 	printf("Name buffer allocated.\n");
-	release_buffer_tmp(&buf);	// free the temporary buffer
+	pthread_cleanup_pop(1);	// parameter set to non-zero to invoke buffer release routine on top of the stack
 	sem_post(&thread_finished);	// notify about finishing
 	return NULL;
 }
