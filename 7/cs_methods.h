@@ -23,12 +23,18 @@
 #include <stdlib.h>						// exit
 #include <stdio.h>						// fprintf
 // additional includes for critical section access control methods
-
+#include <sys/ipc.h>					// IPC_PRIVATE, IPC_RMID
+#include <sys/msg.h>					// System V message queue
+#include <errno.h>						// perror
 
 bool busy_wait_yields = false;			// set by the main program
 
 // macros, variable declarations and function definitions for critical section access control
-
+struct msgbuf {							// CS_METHOD_MQ_SYSV
+	long int msg_type;
+};
+int mq_sys_v_locked;					// CS_METHOD_MQ_SYSV
+struct msgbuf mq_sys_v_msg;				// CS_METHOD_MQ_SYSV
 
 // note: inline is not used unless asked for optimization
 #define FORCE_INLINE	__attribute__ ((always_inline)) static inline
@@ -80,6 +86,20 @@ void cs_init(int method)
 	case CS_METHOD_MQ_POSIX:
 		break;
 	case CS_METHOD_MQ_SYSV:
+		if ((mq_sys_v_locked = msgget(IPC_PRIVATE, 0600)) == -1) {
+										// svmq = System V message queue
+										// key - IPC_PRIVATE: to create private svmq for process
+										// msgflg - 0600: rw for process owner
+			perror("msgget");
+			exit(EXIT_FAILURE);
+		}
+		mq_sys_v_msg.msg_type = 1;		// msg_type must be > 0, msg_text not required
+		if (msgsnd(mq_sys_v_locked, (void *) &mq_sys_v_msg, 0, 0) == -1) {
+										// msgsz - 0: message size is not needed
+										// msgflg - 0: irrelevant, queue will never fully fill
+			perror("msgsnd init");
+			exit(EXIT_FAILURE);
+		}
 		break;
 	default:
 		fprintf(stderr, "Error: The method %d is not defined.\n", cs_method_used);
@@ -110,8 +130,15 @@ void cs_destroy(void)
 	case CS_METHOD_MQ_POSIX:
 		break;
 	case CS_METHOD_MQ_SYSV:
+		if (msgctl(mq_sys_v_locked, IPC_RMID, NULL) == -1) {
+										// immediately remove svmq awakening all waiting reader and writer processes
+										// cmd - IPC_RMID: provides functionality above
+										// buf - NULL: msqid_ds not used
+			perror("msgctl destroy");
+		}
 		break;
 	}
+	cs_var_allocated = false;
 }
 
 // before entering the critical section
@@ -137,6 +164,13 @@ void cs_enter(int id)
 	case CS_METHOD_MQ_POSIX:
 		break;
 	case CS_METHOD_MQ_SYSV:
+		if (msgrcv(mq_sys_v_locked, (void *) &mq_sys_v_msg, 0, 0, 0) == -1) {
+										// msgsz - 0: message size is not needed
+										// msgtyp - 0: first message in queue shall be received
+										// msgflg - 0: when no message is present, wait/block thread
+			perror("msgrcv");
+			exit(EXIT_FAILURE);
+		}
 		break;
 	}
 }
@@ -164,6 +198,12 @@ void cs_leave(int id)
 	case CS_METHOD_MQ_POSIX:
 		break;
 	case CS_METHOD_MQ_SYSV:
+		if (msgsnd(mq_sys_v_locked, (void *) &mq_sys_v_msg, 0, 0) == -1) {
+										// msgsz - 0: message size is not needed
+										// msgflg - 0: irrelevant, queue will never fully fill
+			perror("msgsnd");
+			exit(EXIT_FAILURE);
+		}
 		break;
 	}
 }
